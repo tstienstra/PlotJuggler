@@ -83,6 +83,7 @@ PlotWidget::PlotWidget(PlotDataMapRef& datamap, QWidget* parent)
   , _use_date_time_scale(false)
   , _dragging({ DragInfo::NONE, {}, nullptr })
   , _time_offset(0.0)
+  , _tracker_position(0.0)
   , _transform_select_dialog(nullptr)
   , _context_menu_enabled(true)
 {
@@ -235,10 +236,14 @@ void PlotWidget::buildActions()
     for (auto& ci : curveList())
     {
       if ((xy_series = dynamic_cast<PointSeriesXY*>(ci.curve->data())))
+      {
         break;
+      }
     }
     if (!xy_series)
+    {
       return;
+    }
 
     auto* dialog = new QDialog(qwtPlot());
     dialog->setWindowTitle("Time Window");
@@ -265,21 +270,29 @@ void PlotWidget::buildActions()
     layout->addRow(buttons);
     connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, dialog,
-            [=]() {
-              for (auto& ci : curveList())
-                if (auto* s = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
-                  s->clearTimeWindow();
-              updateCurves(true);
-              replot();
-              dialog->reject();
-            });
+    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, dialog, [=]() {
+      for (auto& ci : curveList())
+      {
+        if (auto* s = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
+        {
+          s->clearTimeWindow();
+        }
+      }
+      updateCurves(true);
+      replot();
+      dialog->reject();
+    });
 
     if (dialog->exec() == QDialog::Accepted)
     {
       for (auto& ci : curveList())
+      {
         if (auto* s = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
+        {
           s->setTimeWindow(spinPrev->value(), spinNext->value());
+          s->setTrackerTime(_tracker_position);
+        }
+      }
       updateCurves(true);
       replot();
       emit undoableChange();
@@ -950,6 +963,7 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
           {
             xy->setTimeWindow(curve_element.attribute("time_window_prev").toDouble(),
                               curve_element.attribute("time_window_next").toDouble());
+            xy->setTrackerTime(_tracker_position);
             xy->updateCache(true);
           }
         }
@@ -1176,10 +1190,20 @@ bool PlotWidget::isTrackerEnabled() const
 
 void PlotWidget::setTrackerPosition(double abs_time)
 {
+  _tracker_position = abs_time;
   if (isXYPlot())
   {
     for (auto& it : curveList())
     {
+      if (auto* s = dynamic_cast<PointSeriesXY*>(it.curve->data()))
+      {
+        if (s->isWindowed())
+        {
+          s->setTrackerTime(abs_time);
+          s->updateCache(false);
+          this->replot();
+        }
+      }
       if (auto series = dynamic_cast<QwtTimeseries*>(it.curve->data()))
       {
         auto pointXY = series->sampleFromTime(abs_time);
@@ -1929,6 +1953,7 @@ QwtSeriesWrapper* PlotWidget::createCurveXY(const PlotData* data_x, const PlotDa
   }
 
   output->setTimeOffset(_time_offset);
+  output->setTrackerTime(_tracker_position);
   return output;
 }
 

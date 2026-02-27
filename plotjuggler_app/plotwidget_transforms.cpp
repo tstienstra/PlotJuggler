@@ -26,6 +26,7 @@ DialogTransformEditor::DialogTransformEditor(PlotWidget* plotwidget)
   auto saved_state = plotwidget->xmlSaveState(doc);
   _plotwidget = new PlotWidget(plotwidget->datamap(), this);
   _plotwidget->on_changeTimeOffset(plotwidget->timeOffset());
+  _plotwidget->setTrackerPosition(plotwidget->trackerPosition());
   _plotwidget->xmlLoadState(saved_state);
 
   auto layout = new QVBoxLayout();
@@ -87,6 +88,15 @@ DialogTransformEditor::~DialogTransformEditor()
 {
   QSettings settings;
   settings.setValue("DialogTransformEditor.geometry", saveGeometry());
+
+  // Remove widgets from stackedWidgetArguments to prevent them from being deleted
+  // since they are owned by the TransformFunction instances.
+  while (ui->stackedWidgetArguments->count() > 1)
+  {
+    QWidget* w = ui->stackedWidgetArguments->widget(1);
+    ui->stackedWidgetArguments->removeWidget(w);
+    w->setParent(nullptr);
+  }
 
   delete ui;
 }
@@ -152,8 +162,7 @@ void DialogTransformEditor::on_listCurves_itemSelectionChanged()
     {
       for (int row = 0; row < ui->listTransforms->count(); row++)
       {
-        if (ui->listTransforms->item(row)->text() ==
-            QString(TimeWindowTransform::transformName()))
+        if (ui->listTransforms->item(row)->text() == QString(TimeWindowTransform::transformName()))
         {
           transform_row = row;
           break;
@@ -216,8 +225,7 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
 
   // ---- XY plot path ----
   {
-    auto row_widget =
-        dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(selected_curves.front()));
+    auto row_widget = dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(selected_curves.front()));
     auto curve_info = _plotwidget->curveFromTitle(row_widget->text());
     if (dynamic_cast<PointSeriesXY*>(curve_info->curve->data()))
     {
@@ -244,7 +252,9 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
         auto ci = _plotwidget->curveFromTitle(rw->text());
         auto* xy = dynamic_cast<PointSeriesXY*>(ci->curve->data());
         if (!xy)
+        {
           continue;
+        }
 
         if (!apply_window)
         {
@@ -253,12 +263,7 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
         }
         else
         {
-          // Use centre of time range as preview tracker time
-          const PlotData* src = xy->dataY();
-          if (src && src->size() > 0)
-          {
-            xy->setTrackerTime((src->front().x + src->back().x) * 0.5);
-          }
+          xy->setTrackerTime(_plotwidget->trackerPosition());
           xy->setTimeWindow(_xy_time_window->prevSec(), _xy_time_window->nextSec());
         }
         xy->updateCache(true);
@@ -270,29 +275,39 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
         QWidget* widget = _xy_time_window->optionsWidget();
         int index = ui->stackedWidgetArguments->indexOf(widget);
         if (index == -1)
+        {
           index = ui->stackedWidgetArguments->addWidget(widget);
+        }
         ui->stackedWidgetArguments->setCurrentIndex(index);
 
         if (_connected_transform_widgets.count(widget) == 0)
         {
-          connect(_xy_time_window.get(), &TransformFunction::parametersChanged, this,
-                  [this]() {
-                    for (auto item : ui->listCurves->selectedItems())
-                    {
-                      auto rw = dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(item));
-                      auto ci = _plotwidget->curveFromTitle(rw->text());
-                      auto* xy = dynamic_cast<PointSeriesXY*>(ci->curve->data());
-                      if (!xy)
-                        continue;
-                      xy->setTimeWindow(_xy_time_window->prevSec(),
-                                        _xy_time_window->nextSec());
-                      xy->updateCache(true);
-                    }
-                    if (ui->checkBoxAutoZoom->isChecked())
-                      _plotwidget->zoomOut(false);
-                    else
-                      _plotwidget->replot();
-                  });
+          connect(widget, &QObject::destroyed, this,
+                  [this, widget]() { _connected_transform_widgets.erase(widget); });
+
+          connect(_xy_time_window.get(), &TransformFunction::parametersChanged, this, [this]() {
+            for (auto item : ui->listCurves->selectedItems())
+            {
+              auto rw = dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(item));
+              auto ci = _plotwidget->curveFromTitle(rw->text());
+              auto* xy = dynamic_cast<PointSeriesXY*>(ci->curve->data());
+              if (!xy)
+              {
+                continue;
+              }
+              xy->setTrackerTime(_plotwidget->trackerPosition());
+              xy->setTimeWindow(_xy_time_window->prevSec(), _xy_time_window->nextSec());
+              xy->updateCache(true);
+            }
+            if (ui->checkBoxAutoZoom->isChecked())
+            {
+              _plotwidget->zoomOut(false);
+            }
+            else
+            {
+              _plotwidget->replot();
+            }
+          });
           _connected_transform_widgets.insert(widget);
         }
       }
@@ -372,6 +387,9 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
 
       if (_connected_transform_widgets.count(widget) == 0)
       {
+        connect(widget, &QObject::destroyed, this,
+                [this, widget]() { _connected_transform_widgets.erase(widget); });
+
         connect(ts->transform().get(), &TransformFunction::parametersChanged, this, [this, ts]() {
           // update this transform
           ts->updateCache(true);

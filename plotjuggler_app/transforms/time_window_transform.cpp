@@ -9,8 +9,7 @@
 
 using namespace PJ;
 
-TimeWindowTransform::TimeWindowTransform()
-  : ui(new Ui::TimeWindowTransform), _widget(new QWidget())
+TimeWindowTransform::TimeWindowTransform() : ui(new Ui::TimeWindowTransform), _widget(new QWidget())
 {
   ui->setupUi(_widget);
 
@@ -44,6 +43,7 @@ void TimeWindowTransform::calculate()
 
   // Always recompute from scratch: clear the destination first
   dst->clear();
+  dst->setMaximumRangeX(src->maximumRangeX());
 
   if (src->size() == 0)
   {

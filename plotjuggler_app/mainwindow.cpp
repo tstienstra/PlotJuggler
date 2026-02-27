@@ -1066,6 +1066,9 @@ bool MainWindow::xmlLoadState(QDomDocument state_document)
     bool remove_offset = (relative_time.attribute("enabled") == QString("1"));
     ui->buttonRemoveTimeOffset->setChecked(remove_offset);
   }
+
+  onTrackerTimeUpdated(_tracker_time, true);
+
   return true;
 }
 
@@ -1739,12 +1742,6 @@ void MainWindow::updateReactivePlots()
         curve_added |= _curvelist_widget->addCurve(name);
         updated_curves.insert(name);
       }
-    }
-    else if (auto time_window = std::dynamic_pointer_cast<TimeWindowTransform>(it.second))
-    {
-      time_window->setTimeTracker(_tracker_time);
-      time_window->calculate();
-      updated_curves.insert(it.first);
     }
   }
   if (curve_added)
@@ -2457,11 +2454,10 @@ void MainWindow::updateDataAndReplot(bool replot_hidden_tabs)
   // Update the reactive plots
   updateReactivePlots();
 
-  // update all transforms, but not the ReactiveLuaFunction or TimeWindowTransform
+  // update all transforms, but not the ReactiveLuaFunction
   for (auto& function : transforms)
   {
-    if (dynamic_cast<ReactiveLuaFunction*>(function) == nullptr &&
-        dynamic_cast<TimeWindowTransform*>(function) == nullptr)
+    if (dynamic_cast<ReactiveLuaFunction*>(function) == nullptr)
     {
       function->calculate();
     }
