@@ -9,6 +9,8 @@
 
 #include <QDialog>
 #include "plotwidget.h"
+#include "point_series_xy.h"
+#include "transforms/time_window_transform.h"
 
 namespace Ui
 {
@@ -42,6 +44,7 @@ private:
   PlotWidget* _plotwidget_origin;
 
   std::set<QWidget*> _connected_transform_widgets;
+  std::shared_ptr<TimeWindowTransform> _xy_time_window;
 
   void setupTable();
 

@@ -58,6 +58,9 @@ void PointSeriesXY::updateCache(bool reset_old_data)
 
   const double EPS = std::numeric_limits<double>::epsilon();
 
+  const double t_low = _windowed ? (_tracker_time - _prev_sec) : std::numeric_limits<double>::lowest();
+  const double t_high = _windowed ? (_tracker_time + _next_sec) : std::numeric_limits<double>::max();
+
   for (size_t i = 0; i < data_size; i++)
   {
     if (std::abs(_x_axis->at(i).x - _y_axis->at(i).x) > EPS)
@@ -65,9 +68,32 @@ void PointSeriesXY::updateCache(bool reset_old_data)
       throw std::runtime_error("X and Y axis don't share the same time axis");
     }
 
+    const double t = _x_axis->at(i).x;
+    if (t < t_low || t > t_high)
+    {
+      continue;
+    }
+
     const QPointF p(_x_axis->at(i).y, _y_axis->at(i).y);
     _cached_curve.pushBack({ p.x(), p.y() });
   }
+}
+
+void PointSeriesXY::setTimeWindow(double prev_sec, double next_sec)
+{
+  _windowed = true;
+  _prev_sec = prev_sec;
+  _next_sec = next_sec;
+}
+
+void PointSeriesXY::clearTimeWindow()
+{
+  _windowed = false;
+}
+
+void PointSeriesXY::setTrackerTime(double t)
+{
+  _tracker_time = t;
 }
 
 RangeOpt PointSeriesXY::getVisualizationRangeX()

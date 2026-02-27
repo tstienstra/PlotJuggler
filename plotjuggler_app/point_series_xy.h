@@ -44,10 +44,33 @@ public:
     return &_cached_curve;
   }
 
+  // ---- Time window support ----
+  void setTimeWindow(double prev_sec, double next_sec);
+  void clearTimeWindow();
+  void setTrackerTime(double t);
+
+  bool isWindowed() const
+  {
+    return _windowed;
+  }
+  double prevSec() const
+  {
+    return _prev_sec;
+  }
+  double nextSec() const
+  {
+    return _next_sec;
+  }
+
 protected:
   const PlotData* _x_axis;
   const PlotData* _y_axis;
   PlotDataXY _cached_curve;
+
+  bool _windowed = false;
+  double _tracker_time = 0.0;
+  double _prev_sec = 5.0;
+  double _next_sec = 5.0;
 };
 
 #endif  // POINT_SERIES_H

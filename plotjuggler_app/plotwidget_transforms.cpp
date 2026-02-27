@@ -43,11 +43,19 @@ DialogTransformEditor::DialogTransformEditor(PlotWidget* plotwidget)
 
   ui->listCurves->setStyleSheet("QListView::item:selected { background: #ddeeff; }");
 
-  auto names = TransformFactory::registeredTransforms();
-
-  for (const auto& name : names)
+  // For XY plots only Time Window applies; for time-series show all registered transforms
+  if (_plotwidget->isXYPlot())
   {
-    ui->listTransforms->addItem(QString::fromStdString(name));
+    ui->listTransforms->addItem(QString(TimeWindowTransform::transformName()));
+    ui->lineEditAlias->setVisible(false);
+  }
+  else
+  {
+    auto names = TransformFactory::registeredTransforms();
+    for (const auto& name : names)
+    {
+      ui->listTransforms->addItem(QString::fromStdString(name));
+    }
   }
 
   if (ui->listCurves->count() != 0)
@@ -138,6 +146,21 @@ void DialogTransformEditor::on_listCurves_itemSelectionChanged()
       }
     }
   }
+  else if (auto* xy = dynamic_cast<PointSeriesXY*>(curve_info->curve->data()))
+  {
+    if (xy->isWindowed())
+    {
+      for (int row = 0; row < ui->listTransforms->count(); row++)
+      {
+        if (ui->listTransforms->item(row)->text() ==
+            QString(TimeWindowTransform::transformName()))
+        {
+          transform_row = row;
+          break;
+        }
+      }
+    }
+  }
 
   int selected_row = -1;
   auto selected_transforms = ui->listTransforms->selectedItems();
@@ -190,6 +213,99 @@ void DialogTransformEditor::on_listTransforms_itemSelectionChanged()
     ui->lineEditAlias->setText("");
     ui->lineEditAlias->setEnabled(false);
   }
+
+  // ---- XY plot path ----
+  {
+    auto row_widget =
+        dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(selected_curves.front()));
+    auto curve_info = _plotwidget->curveFromTitle(row_widget->text());
+    if (dynamic_cast<PointSeriesXY*>(curve_info->curve->data()))
+    {
+      bool apply_window = (transform_ID == TimeWindowTransform::transformName());
+
+      // Create/initialise the shared transform instance and always sync spinboxes
+      // from the selected curve so switching between curves shows correct values.
+      if (apply_window)
+      {
+        if (!_xy_time_window)
+        {
+          _xy_time_window = std::make_shared<TimeWindowTransform>();
+        }
+        auto* xy0 = dynamic_cast<PointSeriesXY*>(curve_info->curve->data());
+        if (xy0 && xy0->isWindowed())
+        {
+          _xy_time_window->setValues(xy0->prevSec(), xy0->nextSec());
+        }
+      }
+
+      for (auto item : selected_curves)
+      {
+        auto rw = dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(item));
+        auto ci = _plotwidget->curveFromTitle(rw->text());
+        auto* xy = dynamic_cast<PointSeriesXY*>(ci->curve->data());
+        if (!xy)
+          continue;
+
+        if (!apply_window)
+        {
+          xy->clearTimeWindow();
+          xy->updateCache(true);
+        }
+        else
+        {
+          // Use centre of time range as preview tracker time
+          const PlotData* src = xy->dataY();
+          if (src && src->size() > 0)
+          {
+            xy->setTrackerTime((src->front().x + src->back().x) * 0.5);
+          }
+          xy->setTimeWindow(_xy_time_window->prevSec(), _xy_time_window->nextSec());
+        }
+        xy->updateCache(true);
+      }
+
+      // Show/hide the options widget
+      if (apply_window)
+      {
+        QWidget* widget = _xy_time_window->optionsWidget();
+        int index = ui->stackedWidgetArguments->indexOf(widget);
+        if (index == -1)
+          index = ui->stackedWidgetArguments->addWidget(widget);
+        ui->stackedWidgetArguments->setCurrentIndex(index);
+
+        if (_connected_transform_widgets.count(widget) == 0)
+        {
+          connect(_xy_time_window.get(), &TransformFunction::parametersChanged, this,
+                  [this]() {
+                    for (auto item : ui->listCurves->selectedItems())
+                    {
+                      auto rw = dynamic_cast<RowWidget*>(ui->listCurves->itemWidget(item));
+                      auto ci = _plotwidget->curveFromTitle(rw->text());
+                      auto* xy = dynamic_cast<PointSeriesXY*>(ci->curve->data());
+                      if (!xy)
+                        continue;
+                      xy->setTimeWindow(_xy_time_window->prevSec(),
+                                        _xy_time_window->nextSec());
+                      xy->updateCache(true);
+                    }
+                    if (ui->checkBoxAutoZoom->isChecked())
+                      _plotwidget->zoomOut(false);
+                    else
+                      _plotwidget->replot();
+                  });
+          _connected_transform_widgets.insert(widget);
+        }
+      }
+      else
+      {
+        ui->stackedWidgetArguments->setCurrentIndex(0);
+      }
+
+      _plotwidget->zoomOut(false);
+      return;
+    }
+  }
+  // ---- end XY plot path ----
 
   TransformedTimeseries* ts = nullptr;
 
@@ -315,13 +431,32 @@ void DialogTransformEditor::on_pushButtonSave_clicked()
       settings.value("Preferences::autozoom_filter_applied", true).toBool();
   QDomDocument doc;
   auto elem = _plotwidget->xmlSaveState(doc);
+
+  // Grab the origin's current tracker time before xmlLoadState overwrites curves
+  double origin_tracker = _plotwidget_origin->trackerPosition();
+
   _plotwidget_origin->xmlLoadState(elem, autozoom_filter_applied);
+
+  // After XML round-trip, PointSeriesXY tracker_time defaults to 0.
+  // Re-apply the real tracker position so the window shows correctly.
+  for (auto& ci : _plotwidget_origin->curveList())
+  {
+    if (auto* xy = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
+    {
+      if (xy->isWindowed())
+      {
+        xy->setTrackerTime(origin_tracker);
+        xy->updateCache(false);
+      }
+    }
+  }
 
   if (autozoom_filter_applied)
   {
     _plotwidget_origin->zoomOut(false);
   }
 
+  emit _plotwidget_origin->undoableChange();
   this->accept();
 }
 

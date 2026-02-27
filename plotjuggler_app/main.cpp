@@ -36,6 +36,7 @@
 #include "transforms/integral_transform.h"
 #include "transforms/absolute_transform.h"
 #include "transforms/time_since_previous_point.h"
+#include "transforms/time_window_transform.h"
 
 #ifdef COMPILED_WITH_CATKIN
 #include <ros/ros.h>
@@ -196,6 +197,7 @@ int main(int argc, char* argv[])
   TransformFactory::registerTransform<MovingVarianceFilter>();
   TransformFactory::registerTransform<SamplesCountFilter>();
   TransformFactory::registerTransform<BinaryFilter>();
+  TransformFactory::registerTransform<TimeWindowTransform>();
   //---------------------------
 
   QCommandLineParser parser;

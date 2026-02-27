@@ -62,6 +62,11 @@ public:
     return _time_offset;
   }
 
+  double trackerPosition() const
+  {
+    return _tracker_position;
+  }
+
   PlotDataMapRef& datamap()
   {
     return _mapped_data;
@@ -177,6 +182,7 @@ private:
   QAction* _action_removeAllCurves;
   QAction* _action_edit;
   QAction* _action_formula;
+  QAction* _action_time_window;
   QAction* _action_split_horizontal;
   QAction* _action_split_vertical;
   QAction* _action_data_statistics;

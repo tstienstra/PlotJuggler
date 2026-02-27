@@ -45,6 +45,8 @@
 #include "PlotJuggler/plotdata.h"
 #include "transforms/function_editor.h"
 #include "transforms/lua_custom_function.h"
+#include "transforms/time_window_transform.h"
+#include "point_series_xy.h"
 #include "utils.h"
 #include "stylesheet.h"
 #include "dummy_data.h"
@@ -1738,6 +1740,12 @@ void MainWindow::updateReactivePlots()
         updated_curves.insert(name);
       }
     }
+    else if (auto time_window = std::dynamic_pointer_cast<TimeWindowTransform>(it.second))
+    {
+      time_window->setTimeTracker(_tracker_time);
+      time_window->calculate();
+      updated_curves.insert(it.first);
+    }
   }
   if (curve_added)
   {
@@ -1751,6 +1759,37 @@ void MainWindow::updateReactivePlots()
       {
         plot->replot();
       }
+    }
+  });
+
+  // Propagate tracker time to TimeWindowTransform instances embedded in TransformedTimeseries
+  // (applied via the "Apply filter" dialog on a time-series plot)
+  forEachWidget([&](PlotWidget* plot) {
+    bool needs_replot = false;
+    for (auto& curve_info : plot->curveList())
+    {
+      if (auto* ts = dynamic_cast<TransformedTimeseries*>(curve_info.curve->data()))
+      {
+        if (auto* tw = dynamic_cast<TimeWindowTransform*>(ts->transform().get()))
+        {
+          tw->setTimeTracker(_tracker_time);
+          ts->updateCache(false);
+          needs_replot = true;
+        }
+      }
+      else if (auto* xy = dynamic_cast<PointSeriesXY*>(curve_info.curve->data()))
+      {
+        if (xy->isWindowed())
+        {
+          xy->setTrackerTime(_tracker_time);
+          xy->updateCache(false);
+          needs_replot = true;
+        }
+      }
+    }
+    if (needs_replot)
+    {
+      plot->replot();
     }
   });
 }
@@ -2418,10 +2457,11 @@ void MainWindow::updateDataAndReplot(bool replot_hidden_tabs)
   // Update the reactive plots
   updateReactivePlots();
 
-  // update all transforms, but not the ReactiveLuaFunction
+  // update all transforms, but not the ReactiveLuaFunction or TimeWindowTransform
   for (auto& function : transforms)
   {
-    if (dynamic_cast<ReactiveLuaFunction*>(function) == nullptr)
+    if (dynamic_cast<ReactiveLuaFunction*>(function) == nullptr &&
+        dynamic_cast<TimeWindowTransform*>(function) == nullptr)
     {
       function->calculate();
     }

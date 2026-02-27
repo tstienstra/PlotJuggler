@@ -34,6 +34,7 @@ qt5_wrap_ui(
   transforms/integral_transform.ui
   transforms/scale_transform.ui
   transforms/samples_count.ui
+  transforms/time_window_transform.ui
   cheatsheet/cheatsheet_dialog.ui)
 
 set(PLOTJUGGLER_SRC
@@ -84,6 +85,7 @@ set(PLOTJUGGLER_SRC
     transforms/first_derivative.cpp
     transforms/scale_transform.cpp
     transforms/time_since_previous_point.cpp
+    transforms/time_window_transform.cpp
     utils.h
     utils.cpp
     mainwindow.h

@@ -20,6 +20,10 @@
 #include <QPushButton>
 #include <QWheelEvent>
 #include <QSettings>
+#include <QDialog>
+#include <QFormLayout>
+#include <QDoubleSpinBox>
+#include <QDialogButtonBox>
 #include <QSvgGenerator>
 #include <QClipboard>
 #include <iostream>
@@ -223,6 +227,65 @@ void PlotWidget::buildActions()
 
   _action_data_statistics = new QAction("&Show data statistics", this);
   connect(_action_data_statistics, &QAction::triggered, this, &PlotWidget::onShowDataStatistics);
+
+  _action_time_window = new QAction("&Set Time Window...", this);
+  connect(_action_time_window, &QAction::triggered, this, [=]() {
+    // Find the first PointSeriesXY curve
+    PointSeriesXY* xy_series = nullptr;
+    for (auto& ci : curveList())
+    {
+      if ((xy_series = dynamic_cast<PointSeriesXY*>(ci.curve->data())))
+        break;
+    }
+    if (!xy_series)
+      return;
+
+    auto* dialog = new QDialog(qwtPlot());
+    dialog->setWindowTitle("Time Window");
+    auto* layout = new QFormLayout(dialog);
+
+    auto* spinPrev = new QDoubleSpinBox(dialog);
+    spinPrev->setRange(0.0, 99999.0);
+    spinPrev->setDecimals(3);
+    spinPrev->setSingleStep(0.1);
+    spinPrev->setSuffix(" s");
+    spinPrev->setValue(xy_series->isWindowed() ? xy_series->prevSec() : 5.0);
+    layout->addRow("Previous seconds:", spinPrev);
+
+    auto* spinNext = new QDoubleSpinBox(dialog);
+    spinNext->setRange(0.0, 99999.0);
+    spinNext->setDecimals(3);
+    spinNext->setSingleStep(0.1);
+    spinNext->setSuffix(" s");
+    spinNext->setValue(xy_series->isWindowed() ? xy_series->nextSec() : 5.0);
+    layout->addRow("Next seconds:", spinNext);
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Reset, dialog);
+    layout->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, dialog,
+            [=]() {
+              for (auto& ci : curveList())
+                if (auto* s = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
+                  s->clearTimeWindow();
+              updateCurves(true);
+              replot();
+              dialog->reject();
+            });
+
+    if (dialog->exec() == QDialog::Accepted)
+    {
+      for (auto& ci : curveList())
+        if (auto* s = dynamic_cast<PointSeriesXY*>(ci.curve->data()))
+          s->setTimeWindow(spinPrev->value(), spinNext->value());
+      updateCurves(true);
+      replot();
+      emit undoableChange();
+    }
+    dialog->deleteLater();
+  });
 }
 
 void PlotWidget::canvasContextMenuTriggered(const QPoint& pos)
@@ -265,6 +328,7 @@ void PlotWidget::canvasContextMenuTriggered(const QPoint& pos)
   if (isXYPlot())
   {
     menu.addAction(_flip_x);
+    menu.addAction(_action_time_window);
   }
   menu.addAction(_flip_y);
   menu.addSeparator();
@@ -285,7 +349,8 @@ void PlotWidget::canvasContextMenuTriggered(const QPoint& pos)
   _action_paste->setEnabled(valid_clipbaord);
 
   _action_removeAllCurves->setEnabled(!curveList().empty());
-  _action_formula->setEnabled(!curveList().empty() && !isXYPlot());
+  _action_formula->setEnabled(!curveList().empty());
+  _action_time_window->setEnabled(!curveList().empty() && isXYPlot());
 
   menu.exec(qwtPlot()->canvas()->mapToGlobal(pos));
 }
@@ -698,6 +763,11 @@ QDomElement PlotWidget::xmlSaveState(QDomDocument& doc) const
       {
         curve_el.setAttribute("curve_x", QString::fromStdString(xy->dataX()->plotName()));
         curve_el.setAttribute("curve_y", QString::fromStdString(xy->dataY()->plotName()));
+        if (xy->isWindowed())
+        {
+          curve_el.setAttribute("time_window_prev", xy->prevSec());
+          curve_el.setAttribute("time_window_next", xy->nextSec());
+        }
       }
     }
     else
@@ -873,6 +943,16 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
         curve_it->marker->setSymbol(
             new QwtSymbol(QwtSymbol::Ellipse, color, QPen(Qt::black), QSize(8, 8)));
         added_curve_names.insert(curve_name_std);
+        // Restore time window if it was saved
+        if (curve_element.hasAttribute("time_window_prev"))
+        {
+          if (auto* xy = dynamic_cast<PointSeriesXY*>(curve_it->curve->data()))
+          {
+            xy->setTimeWindow(curve_element.attribute("time_window_prev").toDouble(),
+                              curve_element.attribute("time_window_next").toDouble());
+            xy->updateCache(true);
+          }
+        }
       }
     }
   }
