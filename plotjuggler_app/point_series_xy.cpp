@@ -61,7 +61,15 @@ void PointSeriesXY::updateCache(bool reset_old_data)
   const double t_low = _windowed ? (_tracker_time - _prev_sec) : std::numeric_limits<double>::lowest();
   const double t_high = _windowed ? (_tracker_time + _next_sec) : std::numeric_limits<double>::max();
 
-  for (size_t i = 0; i < data_size; i++)
+  // When windowed, use binary search to skip points before the window
+  size_t start_index = 0;
+  if (_windowed)
+  {
+    int hint = _x_axis->getIndexFromX(t_low);
+    start_index = (hint > 1) ? static_cast<size_t>(hint - 1) : 0;
+  }
+
+  for (size_t i = start_index; i < data_size; i++)
   {
     if (std::abs(_x_axis->at(i).x - _y_axis->at(i).x) > EPS)
     {
@@ -69,7 +77,11 @@ void PointSeriesXY::updateCache(bool reset_old_data)
     }
 
     const double t = _x_axis->at(i).x;
-    if (t < t_low || t > t_high)
+    if (t > t_high)
+    {
+      break;
+    }
+    if (t < t_low)
     {
       continue;
     }

@@ -7,6 +7,8 @@
 #include "time_window_transform.h"
 #include "ui_time_window_transform.h"
 
+using namespace PJ;
+
 TimeWindowTransform::TimeWindowTransform()
   : ui(new Ui::TimeWindowTransform), _widget(new QWidget())
 {

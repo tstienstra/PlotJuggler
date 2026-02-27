@@ -456,7 +456,6 @@ void DialogTransformEditor::on_pushButtonSave_clicked()
     _plotwidget_origin->zoomOut(false);
   }
 
-  emit _plotwidget_origin->undoableChange();
   this->accept();
 }
 

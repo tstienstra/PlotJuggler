@@ -10,8 +10,6 @@
 #include "PlotJuggler/transform_function.h"
 #include "ui_time_window_transform.h"
 
-using namespace PJ;
-
 namespace Ui
 {
 class TimeWindowTransform;
@@ -24,7 +22,7 @@ class TimeWindowTransform;
  * The output series is recomputed every time the tracker position changes,
  * making it useful for "follow" views in XY plots or time plots.
  */
-class TimeWindowTransform : public TransformFunction_SISO
+class TimeWindowTransform : public PJ::TransformFunction_SISO
 {
 public:
   explicit TimeWindowTransform();
@@ -70,5 +68,5 @@ private:
   double _tracker_time = 0.0;
 
   /** Required by TransformFunction_SISO but not used (calculate() is fully overridden). */
-  std::optional<PlotData::Point> calculateNextPoint(size_t index) override;
+  std::optional<PJ::PlotData::Point> calculateNextPoint(size_t index) override;
 };
